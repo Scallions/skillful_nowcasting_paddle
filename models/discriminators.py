@@ -1,7 +1,7 @@
 """Discriminator implementation."""
 
-from . import layers
-import tensorflow.compat.v1 as tf
+from .modules import layers
+# import tensorflow.compat.v1 as tf
 
 import paddle
 import paddle.nn as nn
@@ -11,7 +11,9 @@ import paddle.nn.functional as F
 class Discriminator(nn.Layer):
     """Discriminator."""
 
-    def __init__(self):
+    def __init__(self,
+                 input_channel = 12,
+                 num_spatial_frames = 8):
         """Constructor."""
         super().__init__()
         # Number of random time steps for the spatial discriminator.
@@ -34,19 +36,21 @@ class Discriminator(nn.Layer):
           A tensor with discriminator loss scalars [b, 2].
         """
         # b, t, h, w, c = tf.shape(frames).as_list()
-        b, t, h, w, c = frames.shape
+        b, t, c, h, w = frames.shape
 
         # Prepare the frames for spatial discriminator: pick 8 random time steps out
         # of 18 lead time steps, and downsample from 256x256 to 128x128.
-        target_frames_sel = tf.range(self.num_conditioning_frames, t)
-        permutation = tf.stack([
-            tf.random_shuffle(target_frames_sel)[:self.num_spatial_frames]
+        target_frames_sel = paddle.arange(self.num_conditioning_frames, t)
+        permutation = paddle.stack([
+            paddle.randperm(target_frames_sel)[:self.num_spatial_frames]
             for _ in range(b)
         ], 0)
-        frames_for_sd = tf.gather(frames, permutation, batch_dims=1)
-        frames_for_sd = tf.layers.average_pooling3d(
-            frames_for_sd, [1, 2, 2], [1, 2, 2], data_format='channels_last')
-
+        frames_for_sd = paddle.gather(frames, permutation, axis=1)
+        # frames_for_sd = F.avg_pool3d(
+        #     frames_for_sd, [1, 2, 2], [1, 2, 2], data_format='channels_last')
+        frames_for_sd = paddle.transpose(frames_for_sd, [0, 2, 1, 3, 4])
+        frames_for_sd = F.avg_pool3d(
+            frames_for_sd, [1, 2, 2], [1, 2, 2])
         # Compute the average spatial discriminator score for each of 8 picked time
         # steps.
         sd_out = self.spatial_discriminator(frames_for_sd)
@@ -54,27 +58,31 @@ class Discriminator(nn.Layer):
         # Prepare the frames for temporal discriminator: choose the offset of a
         # random crop of size 128x128 out of 256x256 and pick full sequence samples.
         cr = self.temporal_crop_ratio
-        h_offset = tf.random_uniform([], 0, (cr - 1) * (h // cr), tf.int32)
-        w_offset = tf.random_uniform([], 0, (cr - 1) * (w // cr), tf.int32)
-        zero_offset = tf.zeros_like(w_offset)
-        begin_tensor = tf.stack(
+        # h_offset = tf.random_uniform([], 0, (cr - 1) * (h // cr), tf.int32)
+        # w_offset = paddle.random_uniform([], 0, (cr - 1) * (w // cr), tf.int32)
+        h_offset = paddle.randint(0, (cr - 1) * (h // cr))
+        w_offset = paddle.randint(0, (cr - 1) * (w // cr))
+        zero_offset = paddle.zeros_like(w_offset)
+        begin_tensor = paddle.stack(
             [zero_offset, zero_offset, h_offset, w_offset, zero_offset], -1)
-        size_tensor = tf.constant([b, t, h // cr, w // cr, c])
-        frames_for_td = tf.slice(frames, begin_tensor, size_tensor)
-        frames_for_td.set_shape([b, t, h // cr, w // cr, c])
-
+        # size_tensor = tf.constant([b, t, h // cr, w // cr, c])
+        size_tensor = paddle.to_tensor([b, t, h // cr, w // cr, c])
+        # frames_for_td = tf.slice(frames, begin_tensor, size_tensor)
+        # frames_for_td.set_shape([b, t, h // cr, w // cr, c])
+        frames_for_td = paddle.slice(frames, [0,1,2,3,4],begin_tensor, begin_tensor+size_tensor)
+        frames_for_td = paddle.reshape(frames_for_td, [b, t, h // cr, w // cr, c])
         # Compute the average temporal discriminator score over length 5 sequences.
         td_out = self.temporal_discriminator(frames_for_td)
 
-        return tf.concat([sd_out, td_out], 1)
+        return paddle.concat([sd_out, td_out], axis=1)
 
 
 class DBlock(nn.Layer):
     """Convolutional residual block."""
 
-    def __init__(self, output_channels, kernel_size=3, downsample=True,
+    def __init__(self, input_channels, output_channels, kernel_size=3, downsample=True,
                  pre_activation=True, conv=layers.SNConv2D,
-                 pooling=layers.downsample_avg_pool, activation=tf.nn.relu):
+                 pooling=layers.downsample_avg_pool, activation=F.relu):
         """Constructor for the D blocks of the DVD-GAN.
 
         Args:
@@ -89,22 +97,21 @@ class DBlock(nn.Layer):
           activation: Activation at optional preactivation and first conv layers.
         """
         super().__init__()
-        # TODO: add input channels to the constructor.
-        self.input_channels = output_channels
+        self.input_channels = input_channels
         self.output_channels = output_channels
         self.kernel_size = kernel_size
         self.downsample = downsample
         self.pre_activation = pre_activation
         self.conv1 = conv(num_channels=self.input_channels,
-                        kernel_size=self.kernel_size)
+                          kernel_size=self.kernel_size)
         self.conv2 = conv(num_channels=self.output_channels,
-                        kernel_size=self.kernel_size)
-        self.pooling = pooling()
-        self.activation = activation()
+                          kernel_size=self.kernel_size)
+        self.pooling = pooling
+        self.activation = activation
 
         if self.input_channels != self.output_channels:
             self.conv3 = conv(num_channels=self.output_channels,
-                            kernel_size=1)
+                              kernel_size=1)
 
     def forward(self, inputs):
         """Build the DBlock.
@@ -150,19 +157,21 @@ class DBlock(nn.Layer):
 class SpatialDiscriminator(nn.Layer):
     """Spatial Discriminator."""
 
-    def __init__(self):
+    def __init__(self,
+                 in_channels=12):
         super().__init__()
         self.blocks = nn.Sequential(
-            DBlock(output_channels=48, pre_activation=False),
-            DBlock(output_channels=96),
-            DBlock(output_channels=192),
-            DBlock(output_channels=384),
-            DBlock(output_channels=768),
-            DBlock(output_channels=768, downsample=False)
+            DBlock(input_channels=12,output_channels=48, pre_activation=False),
+            DBlock(input_channels=48,output_channels=96),
+            DBlock(input_channels=96,output_channels=192),
+            DBlock(input_channels=192,output_channels=384),
+            DBlock(input_channels=384,output_channels=768),
+            DBlock(input_channels=768,output_channels=768, downsample=False)
         )
 
-        self.bn = layers.BatchNorm(calc_sigma=False)
+        self.bn = layers.BatchNorm(768,calc_sigma=False)
         self.output_layer = layers.Linear(output_size=1)
+
     def forward(self, frames):
         """Build the spatial discriminator.
 
@@ -173,15 +182,15 @@ class SpatialDiscriminator(nn.Layer):
           A tensor with discriminator loss scalars [b].
         """
         # b, n, h, w, c = tf.shape(frames).as_list()
-        b, n, h, w, c = frames.shape
+        b, n, c, h, w = frames.shape
 
         # Process each of the n inputs independently.
         # frames = tf.reshape(frames, [b * n, h, w, c])
-        frames = frames.reshape([b * n, h, w, c])
+        frames = frames.reshape([b * n, c, h, w])
 
         # Space-to-depth stacking from 128x128x1 to 64x64x4.
         # TODO: space to depth
-        # frames = tf.nn.space_to_depth(frames, block_size=2)
+        frames = tf.nn.space_to_depth(frames, block_size=2)
 
         # Five residual D Blocks to halve the resolution of the image and double
         # the number of channels.
@@ -196,7 +205,7 @@ class SpatialDiscriminator(nn.Layer):
         y = self.blocks(frames)
         # Sum-pool the representations and feed to spectrally normalized lin. layer.
         # y = tf.reduce_sum(tf.nn.relu(y), axis=[1, 2])
-        y = paddle.sum(F.relu(y), axis=[1,2])
+        y = paddle.sum(F.relu(y), axis=[2, 3])
         # y = layers.BatchNorm(calc_sigma=False)(y)
         # output_layer = layers.Linear(output_size=1)
         # output = output_layer(y)
@@ -207,7 +216,7 @@ class SpatialDiscriminator(nn.Layer):
         # (1 - score_real) and (1 + score_generated) in the loss.
         # output = tf.reshape(output, [b, n, 1])
         # output = tf.reduce_sum(output, keepdims=True, axis=1)
-        output = output.reshape([b, n, 1])
+        # output = output.reshape([b, n, 1])
         output = output.sum(axis=1, keepdim=True)
         return output
 
@@ -215,23 +224,25 @@ class SpatialDiscriminator(nn.Layer):
 class TemporalDiscriminator(nn.Layer):
     """Spatial Discriminator."""
 
-    def __init__(self):
+    def __init__(self,
+                 in_channels = 12):
         super().__init__()
         self.blocks1 = nn.Sequential(
-            DBlock(output_channels=48, conv=layers.SNConv3D,
-                pooling=layers.downsample_avg_pool3d,
-                pre_activation=False),
-            DBlock(output_channels=96, conv=layers.SNConv3D,
-                pooling=layers.downsample_avg_pool3d)
+            DBlock(input_channels=in_channels,output_channels=48,
+                   conv=layers.SNConv3D, pooling=layers.downsample_avg_pool3d,
+                   pre_activation=False),
+            DBlock(input_channels=48,output_channels=96,
+                   conv=layers.SNConv3D,
+                   pooling=layers.downsample_avg_pool3d)
         )
 
         self.blocks2 = nn.Sequential(
-            DBlock(output_channels=192),
-            DBlock(output_channels=384),
-            DBlock(output_channels=768),
-            DBlock(output_channels=768, downsample=False)
+            DBlock(input_channels=96, output_channels=192),
+            DBlock(input_channels=192, output_channels=384),
+            DBlock(input_channels=384, output_channels=768),
+            DBlock(input_channels=768, output_channels=768, downsample=False)
         )
-        self.bn = layers.BatchNorm(calc_sigma=False)
+        self.bn = layers.BatchNorm(768, calc_sigma=False)
         self.output_layer = layers.Linear(output_size=1)
 
     def forward(self, frames):
@@ -244,11 +255,11 @@ class TemporalDiscriminator(nn.Layer):
           A tensor with discriminator loss scalars [b].
         """
         # b, ts, hs, ws, cs = tf.shape(frames).as_list()
-        b, ts, hs, ws, cs = frames.shape
+        b, ts, cs, hs, ws = frames.shape
 
         # Process each of the ti inputs independently.
         # frames = tf.reshape(frames, [b * ts, hs, ws, cs])
-        frames = frames.reshape([b * ts, hs, ws, cs])
+        frames = frames.reshape([b * ts, cs, hs, ws])
 
         # Space-to-depth stacking from 128x128x1 to 64x64x4.
         # TODO: space to depth
@@ -256,7 +267,7 @@ class TemporalDiscriminator(nn.Layer):
 
         # Stack back to sequences of length ti.
         # frames = tf.reshape(frames, [b, ts, hs, ws, cs])
-        frames = paddle.reshape([b, ts, hs, ws, cs])
+        frames = frames.reshape([b, ts, cs, hs, ws])
 
         # Two residual 3D Blocks to halve the resolution of the image, double
         # the number of channels, and reduce the number of time steps.
@@ -264,12 +275,12 @@ class TemporalDiscriminator(nn.Layer):
 
         # Get t < ts, h, w, and c, as we have downsampled in 3D.
         # _, t, h, w, c = tf.shape(frames).as_list()
-        _, t, h, w, c = frames.shape
+        _, t, c, h, w = frames.shape
 
         # Process each of the t images independently.
         # b t h w c -> (b x t) h w c
         # y = tf.reshape(y, [-1] + [h, w, c])
-        y = y.reshape([-1] + [h, w, c])
+        y = y.reshape([-1] + [c, h, w])
 
         # Three residual D Blocks to halve the resolution of the image and double
         # the number of channels.
@@ -283,7 +294,7 @@ class TemporalDiscriminator(nn.Layer):
 
         # Sum-pool the representations and feed to spectrally normalized lin. layer.
         # y = tf.reduce_sum(tf.nn.relu(y), axis=[1, 2])
-        y = paddle.sum(F.relu(y), axis=[1,2])
+        y = paddle.sum(F.relu(y), axis=[2, 3])
         # y = layers.BatchNorm(calc_sigma=False)(y)
         y = self.bn(y)
         # output_layer = layers.Linear(output_size=1)
@@ -293,6 +304,6 @@ class TemporalDiscriminator(nn.Layer):
         # (1 - score_real) and (1 + score_generated) in the loss.
         # output = tf.reshape(output, [b, t, 1])
         # scores = tf.reduce_sum(output, keepdims=True, axis=1)
-        output = output.reshape([b, t, 1])
+        # output = output.reshape([b, t, 1])
         scores = output.sum(axis=1, keepdim=True)
         return scores

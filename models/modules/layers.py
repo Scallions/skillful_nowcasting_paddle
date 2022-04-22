@@ -4,139 +4,177 @@ Implementation of many of the layers can be found in the Sonnet library.
 https://github.com/deepmind/sonnet
 """
 
-import tensorflow.compat.v1 as tf
+# import tensorflow.compat.v1 as tf
+
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 
 
 def downsample_avg_pool(x):
-  """Utility function for downsampling by 2x2 average pooling."""
-  return tf.layers.average_pooling2d(x, 2, 2, data_format='channels_last')
+    """Utility function for downsampling by 2x2 average pooling."""
+    # return tf.layers.average_pooling2d(x, 2, 2, data_format='channels_last')
+    return F.avg_pool2d(x, 2, 2, data_format="NCHW")
 
 
 def downsample_avg_pool3d(x):
-  """Utility function for downsampling by 2x2 average pooling."""
-  return tf.layers.average_pooling3d(x, 2, 2, data_format='channels_last')
+    """Utility function for downsampling by 2x2 average pooling."""
+    # return tf.layers.average_pooling3d(x, 2, 2, data_format='channels_last')
+    return F.adaptive_avg_pool3d(x, 2, 2, data_format="NCDHW")
 
 
 def upsample_nearest_neighbor(inputs, upsample_size):
-  """Nearest neighbor upsampling.
+    """Nearest neighbor upsampling.
 
-  Args:
-    inputs: inputs of size [b, h, w, c] where b is the batch size, h the height,
-      w the width, and c the number of channels.
-    upsample_size: upsample size S.
-  Returns:
-    outputs: nearest neighbor upsampled inputs of size [b, s * h, s * w, c].
-  """
-  del inputs
-  del upsample_size
-  # TO BE IMPLEMENTED
-  # One possible implementation could use tf.image.resize.
-  return []
-
-
-class Conv2D:
-  """2D convolution."""
-
-  def __init__(self, output_channels, kernel_size, stride=1, rate=1,
-               padding='SAME', use_bias=True):
-    """Constructor."""
-    self._output_channels = output_channels
-    self._kernel_size = kernel_size
-    self._stride = stride
-    self._rate = rate
-    self._padding = padding
-    self._initializer = tf.orthogonal_initializer
-    self._use_bias = use_bias
-
-  def __call__(self, tensor):
-    # TO BE IMPLEMENTED
-    # One possible implementation is provided in the Sonnet library: snt.Conv2D.
-    pass
+    Args:
+      inputs: inputs of size [b, h, w, c] where b is the batch size, h the height,
+        w the width, and c the number of channels.
+      upsample_size: upsample size S.
+    Returns:
+      outputs: nearest neighbor upsampled inputs of size [b, s * h, s * w, c].
+    """
+    # del inputs
+    # del upsample_size
+    # # TO BE IMPLEMENTED
+    # # One possible implementation could use tf.image.resize.
+    # return []
+    return F.interpolate(inputs, scale_factor=upsample_size, mode="nearest")
 
 
-class SNConv2D:
-  """2D convolution with spectral normalisation."""
+class Conv2D(nn.Layer):
+    """2D convolution."""
 
-  def __init__(self, output_channels, kernel_size, stride=1, rate=1,
-               padding='SAME', sn_eps=0.0001, use_bias=True):
-    """Constructor."""
-    self._output_channels = output_channels
-    self._kernel_size = kernel_size
-    self._stride = stride
-    self._rate = rate
-    self._padding = padding
-    self._sn_eps = sn_eps
-    self._initializer = tf.orthogonal_initializer
-    self._use_bias = use_bias
+    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+                 padding='SAME', use_bias=True):
+        """Constructor."""
+        super().__init__()
+        self.output_channels = output_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.rate = rate
+        self.padding = padding
+        # self.initializer = tf.orthogonal_initializer
+        self.use_bias = use_bias
+        self.conv = nn.Conv2D(
+          in_channels=in_channels,
+          out_channels=output_channels,
+          kernel_size=kernel_size,
+          stride=stride,
+          padding=padding,
+          bias_attr=use_bias,
+        )
 
-  def __call__(self, tensor):
-    # TO BE IMPLEMENTED
-    # One possible implementation is provided using the Sonnet library as:
-    # SNConv2D = snt.wrap_with_spectral_norm(snt.Conv2D, {'eps': 1e-4})
-    pass
-
-
-class SNConv3D:
-  """2D convolution with spectral regularisation."""
-
-  def __init__(self, output_channels, kernel_size, stride=1, rate=1,
-               padding='SAME', sn_eps=0.0001, use_bias=True):
-    """Constructor."""
-    self._output_channels = output_channels
-    self._kernel_size = kernel_size
-    self._stride = stride
-    self._rate = rate
-    self._padding = padding
-    self._sn_eps = sn_eps
-    self._use_bias = use_bias
-
-  def __call__(self, tensor):
-    # TO BE IMPLEMENTED
-    # One possible implementation is provided using the Sonnet library as:
-    # SNConv3D = snt.wrap_with_spectral_norm(snt.Conv3D, {'eps': 1e-4})
-    pass
+    def forward(self, tensor):
+        # TO BE IMPLEMENTED
+        # One possible implementation is provided in the Sonnet library: snt.Conv2D.
+        return self.conv(tensor)
 
 
-class Linear:
-  """Simple linear layer.
+class SNConv2D(nn.Layer):
+    """2D convolution with spectral normalisation."""
 
-  Linear map from [batch_size, input_size] -> [batch_size, output_size].
-  """
+    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+                 padding='SAME', sn_eps=0.0001, use_bias=True):
+        """Constructor."""
+        super().__init__()
+        self.output_channels = output_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.rate = rate
+        self.padding = padding
+        self.sn_eps = sn_eps
+        # self.initializer = tf.orthogonal_initializer
+        self.use_bias = use_bias
+        self.conv = nn.Conv2D(
+          in_channels=in_channels,
+          out_channels=output_channels,
+          kernel_size=kernel_size,
+          stride=stride,
+          padding=padding,
+          bias_attr=use_bias,
+        )
 
-  def __init__(self, output_size):
-    """Constructor."""
-    self._output_size = output_size
-
-  def __call__(self, tensor):
-    # TO BE IMPLEMENTED
-    # One possible implementation is provided in the Sonnet library: snt.Linear.
-    pass
+    def forward(self, tensor):
+        # TO BE IMPLEMENTED
+        # One possible implementation is provided using the Sonnet library as:
+        # SNConv2D = snt.wrap_with_spectral_norm(snt.Conv2D, {'eps': 1e-4})
+        return nn.utils.spectral_norm(self.conv(tensor),eps=self.sn_eps)
 
 
-class BatchNorm:
-  """Batch normalization."""
+class SNConv3D(nn.Layer):
+    """2D convolution with spectral regularisation."""
 
-  def __init__(self, calc_sigma=True):
-    """Constructor."""
-    self._calc_sigma = calc_sigma
+    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+                 padding='SAME', sn_eps=0.0001, use_bias=True):
+        """Constructor."""
+        self.output_channels = output_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.rate = rate
+        self.padding = padding
+        self.sn_eps = sn_eps
+        self.use_bias = use_bias
+        self.conv = nn.Conv3D(
+          in_channels=in_channels,
+          out_channels=output_channels,
+          kernel_size=kernel_size,
+          stride=stride,
+          padding=padding,
+          bias_attr=use_bias,
+        )
 
-  def __call__(self, tensor):
-    # TO BE IMPLEMENTED
-    # One possible implementation is provided in the Sonnet library:
-    # snt.BatchNorm.
-    pass
+    def forward(self, tensor):
+        # TO BE IMPLEMENTED
+        # One possible implementation is provided using the Sonnet library as:
+        # SNConv3D = snt.wrap_with_spectral_norm(snt.Conv3D, {'eps': 1e-4})
+        return nn.utils.spectral_norm(self.conv(tensor),eps=self.sn_eps)
 
 
-class ApplyAlongAxis:
-  """Layer for applying an operation on each element, along a specified axis."""
+class Linear(nn.Layer):
+    """Simple linear layer.
 
-  def __init__(self, operation, axis=0):
-    """Constructor."""
-    self._operation = operation
-    self._axis = axis
+    Linear map from [batch_size, input_size] -> [batch_size, output_size].
+    """
 
-  def __call__(self, *args):
-    """Apply the operation to each element of args along the specified axis."""
-    split_inputs = [tf.unstack(arg, axis=self._axis) for arg in args]
-    res = [self._operation(x) for x in zip(*split_inputs)]
-    return tf.stack(res, axis=self._axis)
+    def __init__(self, input_size, output_size):
+        """Constructor."""
+        super().__init__()
+        # self.output_size = output_size
+        self.linear = nn.Linear(input_size, output_size)
+
+    def forward(self, tensor):
+        # TO BE IMPLEMENTED
+        # One possible implementation is provided in the Sonnet library: snt.Linear.
+        # pass
+        return self.linear(tensor)
+
+
+class BatchNorm(nn.Layer):
+    """Batch normalization."""
+
+    def __init__(self, num_channels, calc_sigma=True):
+        """Constructor."""
+        super().__init__()
+        self.calc_sigma = calc_sigma
+        self.bn = nn.BatchNorm(num_channels=num_channels)
+
+    def forward(self, tensor):
+        # TO BE IMPLEMENTED
+        # One possible implementation is provided in the Sonnet library:
+        # snt.BatchNorm.
+        return self.bn(tensor)
+
+
+class ApplyAlongAxis(nn.Layer):
+    """Layer for applying an operation on each element, along a specified axis."""
+
+    def __init__(self, operation, axis=0):
+        """Constructor."""
+        self.operation = operation
+        self.axis = axis
+
+    def forward(self, *args):
+        """Apply the operation to each element of args along the specified axis."""
+        split_inputs = [paddle.unstack(arg, axis=self.axis) for arg in args]
+        res = [self.operation(x) for x in zip(*split_inputs)]
+        return paddle.stack(res, axis=self.axis)
