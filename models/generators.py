@@ -211,13 +211,16 @@ class UpsampleGBlock(nn.Layer):
     def __init__(self, input_channels, output_channels, sn_eps=0.0001):
         super().__init__()
         self.conv_1x1 = layers.SNConv2D(
-            output_channels, kernel_size=1, sn_eps=sn_eps)
+            input_channels=input_channels,
+            output_channels=output_channels, kernel_size=1, sn_eps=sn_eps)
         self.conv1_3x3 = layers.SNConv2D(
-            output_channels, kernel_size=3, sn_eps=sn_eps)
-        self.bn1 = layers.BatchNorm()
+            input_channels=input_channels,
+            output_channels=output_channels, kernel_size=3, sn_eps=sn_eps)
+        self.bn1 = layers.BatchNorm(input_channels)
         self.conv2_3x3 = layers.SNConv2D(
-            output_channels, kernel_size=3, sn_eps=sn_eps)
-        self.bn2 = layers.BatchNorm()
+            input_channels=output_channels,
+            output_channels=output_channels, kernel_size=3, sn_eps=sn_eps)
+        self.bn2 = layers.BatchNorm(output_channels)
         self.output_channels = output_channels
 
     def forward(self, inputs):
