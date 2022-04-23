@@ -20,7 +20,7 @@ def downsample_avg_pool(x):
 def downsample_avg_pool3d(x):
     """Utility function for downsampling by 2x2 average pooling."""
     # return tf.layers.average_pooling3d(x, 2, 2, data_format='channels_last')
-    return F.adaptive_avg_pool3d(x, 2, 2, data_format="NCDHW")
+    return F.avg_pool3d(x, 2, 2, data_format="NCDHW")
 
 
 def upsample_nearest_neighbor(inputs, upsample_size):
@@ -44,7 +44,7 @@ def upsample_nearest_neighbor(inputs, upsample_size):
 class Conv2D(nn.Layer):
     """2D convolution."""
 
-    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+    def __init__(self, input_channels, output_channels, kernel_size, stride=1, rate=1,
                  padding='SAME', use_bias=True):
         """Constructor."""
         super().__init__()
@@ -56,7 +56,7 @@ class Conv2D(nn.Layer):
         # self.initializer = tf.orthogonal_initializer
         self.use_bias = use_bias
         self.conv = nn.Conv2D(
-          in_channels=in_channels,
+          in_channels=input_channels,
           out_channels=output_channels,
           kernel_size=kernel_size,
           stride=stride,
@@ -73,7 +73,7 @@ class Conv2D(nn.Layer):
 class SNConv2D(nn.Layer):
     """2D convolution with spectral normalisation."""
 
-    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+    def __init__(self, input_channels, output_channels, kernel_size, stride=1, rate=1,
                  padding='SAME', sn_eps=0.0001, use_bias=True):
         """Constructor."""
         super().__init__()
@@ -85,28 +85,29 @@ class SNConv2D(nn.Layer):
         self.sn_eps = sn_eps
         # self.initializer = tf.orthogonal_initializer
         self.use_bias = use_bias
-        self.conv = nn.Conv2D(
-          in_channels=in_channels,
+        self.conv = nn.utils.spectral_norm(nn.Conv2D(
+          in_channels=input_channels,
           out_channels=output_channels,
           kernel_size=kernel_size,
           stride=stride,
           padding=padding,
           bias_attr=use_bias,
-        )
+        ),eps=self.sn_eps)
 
     def forward(self, tensor):
         # TO BE IMPLEMENTED
         # One possible implementation is provided using the Sonnet library as:
         # SNConv2D = snt.wrap_with_spectral_norm(snt.Conv2D, {'eps': 1e-4})
-        return nn.utils.spectral_norm(self.conv(tensor),eps=self.sn_eps)
+        return self.conv(tensor)
 
 
 class SNConv3D(nn.Layer):
     """2D convolution with spectral regularisation."""
 
-    def __init__(self, in_channels, output_channels, kernel_size, stride=1, rate=1,
+    def __init__(self, input_channels, output_channels, kernel_size, stride=1, rate=1,
                  padding='SAME', sn_eps=0.0001, use_bias=True):
         """Constructor."""
+        super().__init__()
         self.output_channels = output_channels
         self.kernel_size = kernel_size
         self.stride = stride
@@ -114,20 +115,20 @@ class SNConv3D(nn.Layer):
         self.padding = padding
         self.sn_eps = sn_eps
         self.use_bias = use_bias
-        self.conv = nn.Conv3D(
-          in_channels=in_channels,
+        self.conv = nn.utils.spectral_norm(nn.Conv3D(
+          in_channels=input_channels,
           out_channels=output_channels,
           kernel_size=kernel_size,
           stride=stride,
           padding=padding,
           bias_attr=use_bias,
-        )
+        ),eps=self.sn_eps)
 
     def forward(self, tensor):
         # TO BE IMPLEMENTED
         # One possible implementation is provided using the Sonnet library as:
         # SNConv3D = snt.wrap_with_spectral_norm(snt.Conv3D, {'eps': 1e-4})
-        return nn.utils.spectral_norm(self.conv(tensor),eps=self.sn_eps)
+        return self.conv(tensor)
 
 
 class Linear(nn.Layer):
@@ -170,11 +171,12 @@ class ApplyAlongAxis(nn.Layer):
 
     def __init__(self, operation, axis=0):
         """Constructor."""
+        super().__init__()
         self.operation = operation
         self.axis = axis
 
     def forward(self, *args):
         """Apply the operation to each element of args along the specified axis."""
         split_inputs = [paddle.unstack(arg, axis=self.axis) for arg in args]
-        res = [self.operation(x) for x in zip(*split_inputs)]
+        res = [self.operation(*x) for x in zip(*split_inputs)]
         return paddle.stack(res, axis=self.axis)

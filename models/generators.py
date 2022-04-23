@@ -34,7 +34,7 @@ class Generator(nn.Layer):
           predictions: a batch of predictions in the form
             [batch_size, num_lead_times, h, w, 1].
         """
-        _, _, height, width, _ = inputs.shape  # .as_list()
+        _, _, _, height, width = inputs.shape  # .as_list()
         initial_states = self.cond_stack(inputs)
         predictions = self.sampler(initial_states, [height, width])
         return predictions
@@ -48,18 +48,18 @@ class Generator(nn.Layer):
 class ConditioningStack(nn.Layer):
     """Conditioning Stack for the Generator."""
 
-    def __init__(self):
+    def __init__(self, input_channels):
         super().__init__()
-        self.block1 = discriminators.DBlock(output_channels=48, downsample=True)
-        self.conv_mix1 = layers.SNConv2D(output_channels=48, kernel_size=3)
-        self.block2 = discriminators.DBlock(output_channels=96, downsample=True)
-        self.conv_mix2 = layers.SNConv2D(output_channels=96, kernel_size=3)
-        self.block3 = discriminators.DBlock(
+        self.block1 = discriminators.DBlock(input_channels=input_channels,output_channels=48, downsample=True)
+        self.conv_mix1 = layers.SNConv2D(input_channels=input_channels,output_channels=48, kernel_size=3)
+        self.block2 = discriminators.DBlock(input_channels=input_channels,output_channels=96, downsample=True)
+        self.conv_mix2 = layers.SNConv2D(input_channels=input_channels,output_channels=96, kernel_size=3)
+        self.block3 = discriminators.DBlock(input_channels=input_channels,
             output_channels=192, downsample=True)
-        self.conv_mix3 = layers.SNConv2D(output_channels=192, kernel_size=3)
-        self.block4 = discriminators.DBlock(
+        self.conv_mix3 = layers.SNConv2D(input_channels=input_channels,output_channels=192, kernel_size=3)
+        self.block4 = discriminators.DBlock(input_channels=input_channels,
             output_channels=384, downsample=True)
-        self.conv_mix4 = layers.SNConv2D(output_channels=384, kernel_size=3)
+        self.conv_mix4 = layers.SNConv2D(input_channels=input_channels,output_channels=384, kernel_size=3)
 
     def forward(self, inputs):
         # Space to depth conversion of 256x256x1 radar to 128x128x4 hiddens.
@@ -122,7 +122,7 @@ class Sampler(object):
 
     def forward(self, initial_states, resolution):
         init_state_1, init_state_2, init_state_3, init_state_4 = initial_states
-        batch_size = init_state_1.shape.as_list()[0]
+        batch_size = init_state_1.shape[0]
 
         # Latent conditioning stack.
         z = self.latent_stack(batch_size, resolution)
@@ -157,11 +157,12 @@ class Sampler(object):
         hs = [self.g_up_block1(h) for h in hs]
 
         # Output layer.
-        hs = [tf.nn.relu(self.bn(h)) for h in hs]
+        hs = [F.relu(self.bn(h)) for h in hs]
         hs = [self.output_conv(h) for h in hs]
+        # TODO: depth to space
         hs = [tf.nn.depth_to_space(h, 2) for h in hs]
 
-        return tf.stack(hs, axis=1)
+        return paddle.stack(hs, axis=1)
 
 
 class GBlock(nn.Layer):
@@ -170,17 +171,19 @@ class GBlock(nn.Layer):
     def __init__(self, input_channels, output_channels, sn_eps=0.0001):
         super().__init__()
         self.conv1_3x3 = layers.SNConv2D(
-            output_channels, kernel_size=3, sn_eps=sn_eps)
-        self.bn1 = layers.BatchNorm()
+            input_channels=input_channels, output_channels=output_channels, kernel_size=3, sn_eps=sn_eps)
+        self.bn1 = layers.BatchNorm(num_channels=input_channels)
         self.conv2_3x3 = layers.SNConv2D(
-            output_channels, kernel_size=3, sn_eps=sn_eps)
-        self.bn2 = layers.BatchNorm()
+            input_channels=output_channels,
+            output_channels=output_channels, kernel_size=3, sn_eps=sn_eps)
+        self.bn2 = layers.BatchNorm(num_channels=output_channels)
         self.output_channels = output_channels
         self.sn_eps = sn_eps
 
         if input_channels != self.output_channels:
             self.conv_1x1 = layers.SNConv2D(
-                self.output_channels, kernel_size=1, sn_eps=self.sn_eps)
+                input_channels=input_channels,
+                output_channels=self.output_channels, kernel_size=1, sn_eps=self.sn_eps)
 
     def forward(self, inputs):
         input_channels = inputs.shape[-1]
@@ -202,7 +205,7 @@ class GBlock(nn.Layer):
         return h + sc
 
 
-class UpsampleGBlock(nn.Lyaer):
+class UpsampleGBlock(nn.Layer):
     """Upsampling residual generator block."""
 
     def __init__(self, input_channels, output_channels, sn_eps=0.0001):
@@ -235,42 +238,46 @@ class UpsampleGBlock(nn.Lyaer):
         return h + sc
 
 
-class ConvGRU(object):
+class ConvGRU(nn.Layer):
     """A ConvGRU implementation."""
 
-    def __init__(self, kernel_size=3, sn_eps=0.0001):
+    def __init__(self, num_channels, state_channels, kernel_size=3, sn_eps=0.0001):
         """Constructor.
 
         Args:
           kernel_size: kernel size of the convolutions. Default: 3.
           sn_eps: constant for spectral normalization. Default: 1e-4.
         """
+        super().__init__()
         self.kernel_size = kernel_size
         self.sn_eps = sn_eps
+        self.read_gate_conv = layers.SNConv2D(
+            state_channels+num_channels,state_channels, self.kernel_size, sn_eps=self.sn_eps)
+        self.update_gate_conv = layers.SNConv2D(
+            num_channels+state_channels,state_channels, self.kernel_size, sn_eps=self.sn_eps)
+        self.output_conv = layers.SNConv2D(
+            num_channels+state_channels,state_channels, self.kernel_size, sn_eps=self.sn_eps)
 
     def forward(self, inputs, prev_state):
 
         # Concatenate the inputs and previous state along the channel axis.
-        num_channels = prev_state.shape[-1]
-        xh = tf.concat([inputs, prev_state], axis=-1)
+        # num_channels = prev_state.shape[1]
+        xh = paddle.concat([inputs, prev_state], axis=1)
 
         # Read gate of the GRU.
-        read_gate_conv = layers.SNConv2D(
-            num_channels, self.kernel_size, sn_eps=self.sn_eps)
-        read_gate = tf.math.sigmoid(read_gate_conv(xh))
+
+        read_gate = F.sigmoid(self.read_gate_conv(xh))
 
         # Update gate of the GRU.
-        update_gate_conv = layers.SNConv2D(
-            num_channels, self.kernel_size, sn_eps=self.sn_eps)
-        update_gate = tf.math.sigmoid(update_gate_conv(xh))
+
+        update_gate = F.sigmoid(self.update_gate_conv(xh))
 
         # Gate the inputs.
-        gated_input = tf.concat([inputs, read_gate * prev_state], axis=-1)
+        gated_input = paddle.concat([inputs, read_gate * prev_state], axis=1)
 
         # Gate the cell and state / outputs.
-        output_conv = layers.SNConv2D(
-            num_channels, self.kernel_size, sn_eps=self.sn_eps)
-        c = tf.nn.relu(output_conv(gated_input))
+
+        c = F.relu(self.output_conv(gated_input))
         out = update_gate * prev_state + (1. - update_gate) * c
         new_state = out
 

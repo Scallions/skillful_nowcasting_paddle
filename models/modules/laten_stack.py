@@ -13,14 +13,14 @@ class LatentCondStack(nn.Layer):
     def __init__(self, resolution=(256, 256)):
         super().__init__()
         self.resolution = resolution
-        self.conv1 = layers.SNConv2D(in_channels=8 ,output_channels=8, kernel_size=3)
+        self.conv1 = layers.SNConv2D(input_channels=8 ,output_channels=8, kernel_size=3)
         self.lblock1 = LBlock(input_channels=8, output_channels=24)
         self.lblock2 = LBlock(input_channels=24, output_channels=48)
         self.lblock3 = LBlock(input_channels=48, output_channels=192)
         self.mini_attn_block = Attention(num_channels=192)
         self.lblock4 = LBlock(input_channels=192, output_channels=768)
 
-    def forward(self, batch_size):
+    def forward(self, batch_size, resolution=(256, 256)):
 
         # Independent draws from a Normal distribution.
         h, w = self.resolution[0] // 32, self.resolution[1] // 32
@@ -58,7 +58,8 @@ class LBlock(nn.Layer):
           conv: TF module. Default: layers.Conv2D.
           activation: Activation before the conv. layers. Default: tf.nn.relu.
         """
-        # self.output_channels = output_channels
+        super().__init__()
+        self.output_channels = output_channels
         # self.kernel_size = kernel_size
         self.convh1 = conv(
             input_channels=input_channels,
@@ -70,8 +71,8 @@ class LBlock(nn.Layer):
             kernel_size=kernel_size)
         if input_channels < output_channels:
             self.convout = conv(
-                in_channels=output_channels - input_channels,
-                out_channels=output_channels,
+                input_channels=input_channels,
+                output_channels=output_channels - input_channels,
                 kernel_size=1)
         self.activation = activation
 
@@ -97,7 +98,7 @@ class LBlock(nn.Layer):
         h2 = self.convh2(h1)
 
         # Prepare the residual connection branch.
-        input_channels = h0.shape[-1]
+        input_channels = h0.shape[1]
         if input_channels < self.output_channels:
             # sc = self.conv(num_channels=self.output_channels - input_channels,
                         #    kernel_size=1)(inputs)
@@ -133,6 +134,7 @@ class Attention(nn.Layer):
 
     def __init__(self, num_channels, ratio_kq=8, ratio_v=8, conv=layers.Conv2D):
         """Constructor."""
+        super().__init__()
         self.num_channels = num_channels
         self.ratio_kq = ratio_kq
         self.ratio_v = ratio_v
@@ -151,7 +153,7 @@ class Attention(nn.Layer):
             output_channels=num_channels // ratio_v,
             kernel_size=1, padding='VALID', use_bias=False)
         self.out_conv = conv(
-            input_channel=num_channels,
+            input_channels=num_channels // ratio_v,
             output_channels=num_channels,
             kernel_size=1, padding='VALID', use_bias=False)
 
