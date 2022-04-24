@@ -14,7 +14,7 @@ import paddle.nn.functional as F
 class Generator(nn.Layer):
     """Generator for the proposed model."""
 
-    def __init__(self, lead_time=90, time_delta=5):
+    def __init__(self, num_channels=1, lead_time=90, time_delta=5):
         """Constructor.
 
         Args:
@@ -22,7 +22,7 @@ class Generator(nn.Layer):
           time_delta: time step between predictions. Default: 5 min.
         """
         super().__init__()
-        self.cond_stack = ConditioningStack()
+        self.cond_stack = ConditioningStack(num_channels,lead_time//time_delta)
         self.sampler = Sampler(lead_time, time_delta)
 
     def forward(self, inputs):
@@ -48,24 +48,24 @@ class Generator(nn.Layer):
 class ConditioningStack(nn.Layer):
     """Conditioning Stack for the Generator."""
 
-    def __init__(self, input_channels):
+    def __init__(self, input_channels, time_step):
         super().__init__()
-        self.block1 = discriminators.DBlock(input_channels=input_channels,output_channels=48, downsample=True)
-        self.conv_mix1 = layers.SNConv2D(input_channels=input_channels,output_channels=48, kernel_size=3)
-        self.block2 = discriminators.DBlock(input_channels=input_channels,output_channels=96, downsample=True)
-        self.conv_mix2 = layers.SNConv2D(input_channels=input_channels,output_channels=96, kernel_size=3)
-        self.block3 = discriminators.DBlock(input_channels=input_channels,
+        self.block1 = discriminators.DBlock(input_channels=input_channels*4,output_channels=48, downsample=True)
+        self.conv_mix1 = layers.SNConv2D(input_channels=48*time_step,output_channels=48, kernel_size=3)
+        self.block2 = discriminators.DBlock(input_channels=48,output_channels=96, downsample=True)
+        self.conv_mix2 = layers.SNConv2D(input_channels=96*time_step,output_channels=96, kernel_size=3)
+        self.block3 = discriminators.DBlock(input_channels=96,
             output_channels=192, downsample=True)
-        self.conv_mix3 = layers.SNConv2D(input_channels=input_channels,output_channels=192, kernel_size=3)
-        self.block4 = discriminators.DBlock(input_channels=input_channels,
+        self.conv_mix3 = layers.SNConv2D(input_channels=192*time_step,output_channels=192, kernel_size=3)
+        self.block4 = discriminators.DBlock(input_channels=192,
             output_channels=384, downsample=True)
-        self.conv_mix4 = layers.SNConv2D(input_channels=input_channels,output_channels=384, kernel_size=3)
+        self.conv_mix4 = layers.SNConv2D(input_channels=384*time_step,output_channels=384, kernel_size=3)
 
     def forward(self, inputs):
         # Space to depth conversion of 256x256x1 radar to 128x128x4 hiddens.
         # TODO: space to depth
         h0 = batch_apply(
-            functools.partial(tf.nn.space_to_depth, block_size=2), inputs)
+            functools.partial(layers.pixel_shuffle_inv, scale_factor=2), inputs)
 
         # Downsampling residual D Blocks.
         h1 = time_apply(self.block1, h0)
@@ -86,41 +86,42 @@ class ConditioningStack(nn.Layer):
     def mixing_layer(self, inputs, conv_block):
         # Convert from [batch_size, time, h, w, c] -> [batch_size, h, w, c * time]
         # then perform convolution on the output while preserving number of c.
-        stacked_inputs = paddle.concat(paddle.unstack(inputs, axis=1), axis=-1)
+        stacked_inputs = paddle.concat(paddle.unstack(inputs, axis=1), axis=1)
         return F.relu(conv_block(stacked_inputs))
 
 
-class Sampler(object):
+class Sampler(nn.Layer):
     """Sampler for the Generator."""
 
     def __init__(self, lead_time=90, time_delta=5):
+        super().__init__()
         self.num_predictions = lead_time // time_delta
         self.latent_stack = laten_stack.LatentCondStack()
 
-        self.conv_gru4 = ConvGRU()
-        self.conv4 = layers.SNConv2D(kernel_size=1, output_channels=768)
-        self.gblock4 = GBlock(output_channels=768)
-        self.g_up_block4 = UpsampleGBlock(output_channels=384)
+        self.conv_gru4 = nn.RNN(ConvGRU(768,384))
+        self.conv4 = layers.SNConv2D(384,kernel_size=1, output_channels=768)
+        self.gblock4 = GBlock(768,output_channels=768)
+        self.g_up_block4 = UpsampleGBlock(768,output_channels=384)
 
-        self.conv_gru3 = ConvGRU()
-        self.conv3 = layers.SNConv2D(kernel_size=1, output_channels=384)
-        self.gblock3 = GBlock(output_channels=384)
-        self.g_up_block3 = UpsampleGBlock(output_channels=192)
+        self.conv_gru3 = nn.RNN(ConvGRU(384,192))
+        self.conv3 = layers.SNConv2D(192,kernel_size=1, output_channels=384)
+        self.gblock3 = GBlock(384,output_channels=384)
+        self.g_up_block3 = UpsampleGBlock(384,output_channels=192)
 
-        self.conv_gru2 = ConvGRU()
-        self.conv2 = layers.SNConv2D(kernel_size=1, output_channels=192)
-        self.gblock2 = GBlock(output_channels=192)
-        self.g_up_block2 = GBlock(output_channels=96)
+        self.conv_gru2 = nn.RNN(ConvGRU(192,96))
+        self.conv2 = layers.SNConv2D(96,kernel_size=1, output_channels=192)
+        self.gblock2 = GBlock(192,output_channels=192)
+        self.g_up_block2 = UpsampleGBlock(192,output_channels=96)
 
-        self.conv_gru1 = ConvGRU()
-        self.conv1 = layers.SNConv2D(kernel_size=1, output_channels=96)
-        self.gblock1 = GBlock(output_channels=96)
-        self.g_up_block1 = UpsampleGBlock(output_channels=48)
+        self.conv_gru1 = nn.RNN(ConvGRU(96,48))
+        self.conv1 = layers.SNConv2D(48,kernel_size=1, output_channels=96)
+        self.gblock1 = GBlock(96,output_channels=96)
+        self.g_up_block1 = UpsampleGBlock(96,output_channels=48)
 
-        self.bn = layers.BatchNorm()
-        self.output_conv = layers.SNConv2D(kernel_size=1, output_channels=4)
+        self.bn = layers.BatchNorm(48)
+        self.output_conv = layers.SNConv2D(48,kernel_size=1, output_channels=4)
 
-    def forward(self, initial_states, resolution):
+    def forward(self, initial_states, resolution=(256,256)):
         init_state_1, init_state_2, init_state_3, init_state_4 = initial_states
         batch_size = init_state_1.shape[0]
 
@@ -129,30 +130,31 @@ class Sampler(object):
         hs = [z] * self.num_predictions
 
         # Layer 4 (bottom-most).
+        # TODO: static rnn
         # hs, _ = tf.nn.static_rnn(self.conv_gru4, hs, init_state_4)
-        hs, _ = self.conv_gru4(hs, init_state_4)
-        hs = [self.conv4(h) for h in hs]
+        hs, _ = self.conv_gru4(paddle.stack(hs, axis=1), init_state_4)
+        hs = [self.conv4(h) for h in paddle.unstack(hs, axis=1)]
         hs = [self.gblock4(h) for h in hs]
         hs = [self.g_up_block4(h) for h in hs]
 
         # Layer 3.
         # hs, _ = tf.nn.static_rnn(self.conv_gru3, hs, init_state_3)
-        hs, _ = self.conv_gru3(hs, init_state_3)
-        hs = [self.conv3(h) for h in hs]
+        hs, _ = self.conv_gru3(paddle.stack(hs, axis=1), init_state_3)
+        hs = [self.conv3(h) for h in paddle.unstack(hs, axis=1)]
         hs = [self.gblock3(h) for h in hs]
         hs = [self.g_up_block3(h) for h in hs]
 
         # Layer 2.
         # hs, _ = tf.nn.static_rnn(self.conv_gru2, hs, init_state_2)
-        hs, _ = self.conv_gru2(hs, init_state_2)
-        hs = [self.conv2(h) for h in hs]
+        hs, _ = self.conv_gru2(paddle.stack(hs, axis=1), init_state_2)
+        hs = [self.conv2(h) for h in paddle.unstack(hs, axis=1)]
         hs = [self.gblock2(h) for h in hs]
         hs = [self.g_up_block2(h) for h in hs]
 
         # Layer 1 (top-most).
         # hs, _ = tf.nn.static_rnn(self.conv_gru1, hs, init_state_1)
-        hs, _ = self.conv_gru1(hs, init_state_1)
-        hs = [self.conv1(h) for h in hs]
+        hs, _ = self.conv_gru1(paddle.stack(hs, axis=1), init_state_1)
+        hs = [self.conv1(h) for h in paddle.unstack(hs, axis=1)]
         hs = [self.gblock1(h) for h in hs]
         hs = [self.g_up_block1(h) for h in hs]
 
@@ -160,7 +162,7 @@ class Sampler(object):
         hs = [F.relu(self.bn(h)) for h in hs]
         hs = [self.output_conv(h) for h in hs]
         # TODO: depth to space
-        hs = [tf.nn.depth_to_space(h, 2) for h in hs]
+        hs = [layers.pixel_shuffle(h, 2) for h in hs]
 
         return paddle.stack(hs, axis=1)
 
@@ -186,7 +188,7 @@ class GBlock(nn.Layer):
                 output_channels=self.output_channels, kernel_size=1, sn_eps=self.sn_eps)
 
     def forward(self, inputs):
-        input_channels = inputs.shape[-1]
+        input_channels = inputs.shape[1]
 
         # Optional spectrally normalized 1x1 convolution.
         if input_channels != self.output_channels:
@@ -241,7 +243,7 @@ class UpsampleGBlock(nn.Layer):
         return h + sc
 
 
-class ConvGRU(nn.Layer):
+class ConvGRU(nn.RNNCellBase):
     """A ConvGRU implementation."""
 
     def __init__(self, num_channels, state_channels, kernel_size=3, sn_eps=0.0001):

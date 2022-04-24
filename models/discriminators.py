@@ -7,7 +7,6 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 
-
 class Discriminator(nn.Layer):
     """Discriminator."""
 
@@ -23,8 +22,8 @@ class Discriminator(nn.Layer):
         # As the input is the whole sequence of the event (including conditioning
         # frames), the spatial discriminator needs to pick only the t > T+0.
         self.num_conditioning_frames = 4
-        self.spatial_discriminator = SpatialDiscriminator()
-        self.temporal_discriminator = TemporalDiscriminator()
+        self.spatial_discriminator = SpatialDiscriminator(input_channels=input_channel)
+        self.temporal_discriminator = TemporalDiscriminator(input_channels=input_channel)
 
     def forward(self, frames):
         """Build the discriminator.
@@ -40,17 +39,20 @@ class Discriminator(nn.Layer):
 
         # Prepare the frames for spatial discriminator: pick 8 random time steps out
         # of 18 lead time steps, and downsample from 256x256 to 128x128.
-        target_frames_sel = paddle.arange(self.num_conditioning_frames, t)
+        # target_frames_sel = paddle.arange(self.num_conditioning_frames, t)
         permutation = paddle.stack([
-            paddle.randperm(target_frames_sel)[:self.num_spatial_frames]
+            (paddle.randperm(t-self.num_conditioning_frames) + self.num_conditioning_frames)[:self.num_spatial_frames]
             for _ in range(b)
         ], 0)
-        frames_for_sd = paddle.gather(frames, permutation, axis=1)
+        # TODO: delete for loop
+        # frames_for_sd = paddle.gather(frames, permutation, axis=1)
+        frames_for_sd = paddle.stack([paddle.gather(f, permutation[i]) for i, f in enumerate(paddle.unstack(frames))], axis=0)
         # frames_for_sd = F.avg_pool3d(
         #     frames_for_sd, [1, 2, 2], [1, 2, 2], data_format='channels_last')
         frames_for_sd = paddle.transpose(frames_for_sd, [0, 2, 1, 3, 4])
         frames_for_sd = F.avg_pool3d(
             frames_for_sd, [1, 2, 2], [1, 2, 2])
+        frames_for_sd = paddle.transpose(frames_for_sd, [0, 2, 1, 3, 4])
         # Compute the average spatial discriminator score for each of 8 picked time
         # steps.
         sd_out = self.spatial_discriminator(frames_for_sd)
@@ -64,13 +66,13 @@ class Discriminator(nn.Layer):
         w_offset = paddle.randint(0, (cr - 1) * (w // cr))
         zero_offset = paddle.zeros_like(w_offset)
         begin_tensor = paddle.stack(
-            [zero_offset, zero_offset, h_offset, w_offset, zero_offset], -1)
+            [zero_offset, zero_offset, zero_offset, h_offset, w_offset], -1)
         # size_tensor = tf.constant([b, t, h // cr, w // cr, c])
-        size_tensor = paddle.to_tensor([b, t, h // cr, w // cr, c])
+        size_tensor = paddle.to_tensor([b, t, c, h // cr, w // cr])
         # frames_for_td = tf.slice(frames, begin_tensor, size_tensor)
         # frames_for_td.set_shape([b, t, h // cr, w // cr, c])
         frames_for_td = paddle.slice(frames, [0,1,2,3,4],begin_tensor, begin_tensor+size_tensor)
-        frames_for_td = paddle.reshape(frames_for_td, [b, t, h // cr, w // cr, c])
+        frames_for_td = paddle.reshape(frames_for_td, [b, t, c, h // cr, w // cr])
         # Compute the average temporal discriminator score over length 5 sequences.
         td_out = self.temporal_discriminator(frames_for_td)
 
@@ -192,7 +194,8 @@ class SpatialDiscriminator(nn.Layer):
         # TODO: space to depth
         # frames = tf.nn.space_to_depth(frames, block_size=2)
         # fake impl
-        frames = frames.reshape([b*n, c*4, h // 2, w // 2])
+        # frames = frames.reshape([b*n, c*4, h // 2, w // 2])
+        frames = layers.pixel_shuffle_inv(frames, 2)
 
         # Five residual D Blocks to halve the resolution of the image and double
         # the number of channels.
@@ -267,7 +270,8 @@ class TemporalDiscriminator(nn.Layer):
         # TODO: space to depth
         # frames = tf.nn.space_to_depth(frames, block_size=2)
         # fake impl
-        frames = frames.reshape([b, ts, cs*4, hs // 2, ws // 2])
+        # frames = frames.reshape([b, ts, cs*4, hs // 2, ws // 2])
+        frames = layers.pixel_shuffle_inv(frames, 2)
 
         # Stack back to sequences of length ti.
         # frames = tf.reshape(frames, [b, ts, hs, ws, cs])
