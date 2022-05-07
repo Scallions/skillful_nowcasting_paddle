@@ -45,28 +45,40 @@ from paddle.io import Dataset, BatchSampler, DataLoader
 # print(value)
 
 class NowCastingDataset(Dataset):
-    def __init__(self, path, length):
+    def __init__(self, path, length, ratio):
         super().__init__()
         nc_obj = netCDF4.Dataset(path)
         self.value = nc_obj.variables['__xarray_dataarray_variable__']
         self.row = nc_obj.variables['__xarray_dataarray_variable__'].shape[1]
         self.col = nc_obj.variables['__xarray_dataarray_variable__'].shape[2]
+        self.total_data = nc_obj.variables['__xarray_dataarray_variable__'].shape[0]
+        self.ratio = int(self.total_data * ratio)
         self.length = length
+        self.train = True
 
     def __getitem__(self, item):
-        inp = self.value[item:item + self.length]
-        target = self.value[item + self.length:item + self.length + self.length]
-        inp = np.reshape(inp, (self.length, 1, self.row, self.col))
-        target = np.reshape(target, (self.length, 1, self.row, self.col))
-        return [inp, target]
+        if self.train:
+            train_data = self.value[:self.ratio]
+            inp = train_data[item:item + self.length]
+            target = train_data[item + self.length:item + self.length + self.length]
+            inp = np.reshape(inp, (self.length, 1, self.row, self.col))
+            target = np.reshape(target, (self.length, 1, self.row, self.col))
+            return [inp, target]
+        else:
+            test_data = self.value[self.ratio:]
+            inp = test_data[item:item + self.length]
+            target = test_data[item + self.length:item + self.length + self.length]
+            inp = np.reshape(inp, (self.length, 1, self.row, self.col))
+            target = np.reshape(target, (self.length, 1, self.row, self.col))
+            return [inp, target]
 
     def __len__(self):
         return self.value.shape[0]
 
 if __name__ == '__main__':
-    PATH = r'E:\dataset\pwv.nc'
+    PATH = r'E:\rain_data\pwv.nc'
     LENGTH = 22
-    dataset = NowCastingDataset(PATH,LENGTH)
+    dataset = NowCastingDataset(PATH,LENGTH,0.8)
     loader = DataLoader(dataset,
                         batch_size=4,
                         shuffle=True,
