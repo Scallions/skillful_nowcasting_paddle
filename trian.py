@@ -1,6 +1,7 @@
 import paddle
 import paddle.optimizer
-
+from paddle.io import DataLoader
+from dataset import NowCastingDataset
 from models.generators import Generator
 from models.discriminators import Discriminator
 from models.modules.loss import loss_hinge_disc, loss_hinge_gen, grid_cell_regularizer
@@ -11,12 +12,21 @@ D = Discriminator(input_channel=1)
 opt_G = paddle.optimizer.Adam(parameters=G.parameters())
 opt_D = paddle.optimizer.Adam(parameters=D.parameters())
 
+PATH = r'E:\dataset\pwv.nc'
+LENGTH = 22
+dataset = NowCastingDataset(PATH, LENGTH)
+loader = DataLoader(dataset,
+                        batch_size=4,
+                        shuffle=True,
+                        drop_last=True,
+                        num_workers=4) # if windows, num_workers must be set 0
 
 epochs = 1
 
 for epoch in range(epochs):
-    ds = [(paddle.rand([2,22,1,256,256]), paddle.rand([2,22,1,256,256]))]
-    for inp, target in ds:
+    #ds = [(paddle.rand([2,22,1,256,256]), paddle.rand([2,22,1,256,256]))]
+    for inp, target in loader:
+    #for inp, target in ds:
         # b t c h w
 
         ## disc

@@ -4,7 +4,6 @@ import numpy as np
 from paddle.io import Dataset, BatchSampler, DataLoader
 
 
-
 # PATH = r'E:\dataset\pwv.nc'
 # nc_obj = netCDF4.Dataset(PATH)
 # print(nc_obj)
