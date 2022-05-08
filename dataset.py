@@ -45,7 +45,7 @@ from paddle.io import Dataset, BatchSampler, DataLoader
 # print(value)
 
 class NowCastingDataset(Dataset):
-    def __init__(self, path, length, ratio):
+    def __init__(self, path, length, ratio, training):
         super().__init__()
         nc_obj = netCDF4.Dataset(path)
         self.value = nc_obj.variables['__xarray_dataarray_variable__']
@@ -54,39 +54,35 @@ class NowCastingDataset(Dataset):
         self.total_data = nc_obj.variables['__xarray_dataarray_variable__'].shape[0]
         self.ratio = int(self.total_data * ratio)
         self.length = length
-        self.train = True
+        self.train = training
 
     def __getitem__(self, item):
         if self.train:
-            train_data = self.value[:self.ratio]
-            inp = train_data[item:item + self.length]
-            target = train_data[item + self.length:item + self.length + self.length]
-            inp = np.reshape(inp, (self.length, 1, self.row, self.col))
-            target = np.reshape(target, (self.length, 1, self.row, self.col))
-            return [inp, target]
+            data = self.value[:self.ratio]
         else:
-            test_data = self.value[self.ratio:]
-            inp = test_data[item:item + self.length]
-            target = test_data[item + self.length:item + self.length + self.length]
-            inp = np.reshape(inp, (self.length, 1, self.row, self.col))
-            target = np.reshape(target, (self.length, 1, self.row, self.col))
-            return [inp, target]
+            data = self.value[self.ratio:]
+        inp = data[item:item + self.length]
+        tar = data[item + self.length:item + self.length + self.length]
+        input = np.reshape(inp, (self.length, 1, self.row, self.col))
+        target = np.reshape(tar, (self.length, 1, self.row, self.col))
+        return [input, target]
 
     def __len__(self):
         return self.value.shape[0]
 
 if __name__ == '__main__':
-    PATH = r'E:\rain_data\pwv.nc'
+    PATH = r'E:\dataset\pwv.nc'
     LENGTH = 22
-    dataset = NowCastingDataset(PATH,LENGTH,0.8)
+    dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=False)
     loader = DataLoader(dataset,
-                        batch_size=4,
-                        shuffle=True,
+                        batch_size=64,
+                        shuffle=False,
                         drop_last=True,
                         num_workers=0)
     for i, (inp, target) in enumerate(loader):
         print(i)
         print(inp.shape)
         print(target.shape)
-        break
+        #break
+    print('fininshed!')
 
