@@ -14,30 +14,31 @@ opt_D = paddle.optimizer.Adam(parameters=D.parameters())
 
 PATH = r'E:\dataset\pwv.nc'
 LENGTH = 22
-EPOCH = 100
-BATCH_SIZE = 4
+BATCH_SIZE = 1
 
 train_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=True)
 train_loader = DataLoader(train_dataset,
                     batch_size=BATCH_SIZE,
                     shuffle=False,
                     drop_last=True,
-                    num_workers=4) # if windows, num_workers must be set 0
+                    num_workers=0) # if windows, num_workers must be set 0
 
 test_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=False)
 test_loader = DataLoader(test_dataset,
                     batch_size=BATCH_SIZE,
                     shuffle=False,
                     drop_last=True,
-                    num_workers=4)
+                    num_workers=0)
 
-
-for epoch in range(EPOCH):
+TOTAL_EPOCH = 100
+TOTAL_STEP = len(train_loader)
+for epoch in range(TOTAL_EPOCH):
     #ds = [(paddle.rand([2,22,1,256,256]), paddle.rand([2,22,1,256,256]))]
-    for inp, target in train_loader:
+    for step, (inp, target) in enumerate(train_loader):
     #for inp, target in ds:
         # b t c h w
-
+        inp = inp.astype(paddle.float32)
+        target = target.astype(paddle.float32)
         ## disc
         opt_D.clear_grad()
         pred = G(inp)
@@ -67,3 +68,8 @@ for epoch in range(EPOCH):
         gen_loss = gen_disc_loss + grid_cell_reg
         gen_loss.backward()
         opt_G.step()
+
+        if step % 100 == 0:
+            print('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}'
+                  .format(epoch, TOTAL_EPOCH, step, TOTAL_STEP, disc_loss.item(), gen_loss.item()))
+
