@@ -63,12 +63,15 @@ class NowCastingDataset(Dataset):
             data = self.value[self.ratio:]
         inp = data[item:item + self.length]
         tar = data[item + self.length:item + self.length + self.length]
-        input = np.reshape(inp, (self.length, 1, self.row, self.col))
-        target = np.reshape(tar, (self.length, 1, self.row, self.col))
+        input = np.resize(np.reshape(inp, (self.length, 1, self.row, self.col)), (self.length, 1, 256, 256))
+        target = np.resize(np.reshape(tar, (self.length, 1, self.row, self.col)), (self.length, 1, 256, 256))
         return [input, target]
 
     def __len__(self):
-        return self.value.shape[0]
+        if self.train:
+            return self.ratio
+        else:
+            return self.value.shape[0] - self.ratio
 
 if __name__ == '__main__':
     PATH = r'E:\dataset\pwv.nc'
@@ -83,6 +86,6 @@ if __name__ == '__main__':
         print(i)
         print(inp.shape)
         print(target.shape)
-        #break
+        break
     print('fininshed!')
 
