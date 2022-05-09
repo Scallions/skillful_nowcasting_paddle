@@ -14,18 +14,27 @@ opt_D = paddle.optimizer.Adam(parameters=D.parameters())
 
 PATH = r'E:\dataset\pwv.nc'
 LENGTH = 22
-dataset = NowCastingDataset(PATH, LENGTH)
-loader = DataLoader(dataset,
-                        batch_size=4,
-                        shuffle=True,
-                        drop_last=True,
-                        num_workers=4) # if windows, num_workers must be set 0
+EPOCH = 100
+BATCH_SIZE = 4
 
-epochs = 1
+train_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=True)
+train_loader = DataLoader(train_dataset,
+                    batch_size=BATCH_SIZE,
+                    shuffle=False,
+                    drop_last=True,
+                    num_workers=4) # if windows, num_workers must be set 0
 
-for epoch in range(epochs):
+test_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=False)
+test_loader = DataLoader(test_dataset,
+                    batch_size=BATCH_SIZE,
+                    shuffle=False,
+                    drop_last=True,
+                    num_workers=4)
+
+
+for epoch in range(EPOCH):
     #ds = [(paddle.rand([2,22,1,256,256]), paddle.rand([2,22,1,256,256]))]
-    for inp, target in loader:
+    for inp, target in train_loader:
     #for inp, target in ds:
         # b t c h w
 
