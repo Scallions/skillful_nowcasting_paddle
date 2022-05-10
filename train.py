@@ -1,10 +1,17 @@
 import paddle
+import os
+from logger import logger_config
 import paddle.optimizer
 from paddle.io import DataLoader
 from dataset import NowCastingDataset
 from models.generators import Generator
 from models.discriminators import Discriminator
 from models.modules.loss import loss_hinge_disc, loss_hinge_gen, grid_cell_regularizer
+
+if not os.path.isdir('result'):
+    os.makedirs('result')
+logger = logger_config(log_path='result/DGMR_log.txt', logging_name='DGMR')
+
 
 G = Generator(num_channels=1, lead_time=110, time_delta=5)
 D = Discriminator(input_channel=1)
@@ -13,8 +20,8 @@ opt_G = paddle.optimizer.Adam(parameters=G.parameters())
 opt_D = paddle.optimizer.Adam(parameters=D.parameters())
 
 PATH = r'E:\dataset\pwv.nc'
-LENGTH = 22
-BATCH_SIZE = 1
+LENGTH = 10
+BATCH_SIZE = 4
 
 train_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=True)
 train_loader = DataLoader(train_dataset,
@@ -70,6 +77,11 @@ for epoch in range(TOTAL_EPOCH):
         opt_G.step()
 
         if step % 100 == 0:
-            print('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}'
-                  .format(epoch, TOTAL_EPOCH, step, TOTAL_STEP, disc_loss.item(), gen_loss.item()))
+            logger.info('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}'.format(epoch,
+                                                                                             TOTAL_EPOCH,
+                                                                                             step,
+                                                                                             TOTAL_STEP,
+                                                                                             disc_loss.item(),
+                                                                                             gen_loss.item()))
+
 
