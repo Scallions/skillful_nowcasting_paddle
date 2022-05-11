@@ -1,6 +1,7 @@
 import paddle
 import os
 import numpy as np
+from datetime import datetime
 from logger import logger_config
 import paddle.optimizer
 from paddle.io import DataLoader
@@ -9,9 +10,11 @@ from models.generators import Generator
 from models.discriminators import Discriminator
 from models.modules.loss import loss_hinge_disc, loss_hinge_gen, grid_cell_regularizer
 
+
+current_time = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 if not os.path.isdir('result'):
     os.makedirs('result')
-logger = logger_config(log_path='result/DGMR_log.txt', logging_name='DGMR')
+logger = logger_config(log_path='result/DGMR_'+current_time+'.txt', logging_name='DGMR')
 
 
 G = Generator(num_channels=1, lead_time=90, time_delta=5)
