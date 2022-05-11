@@ -54,6 +54,7 @@ class NowCastingDataset(Dataset):
         self.total_data = nc_obj.variables['__xarray_dataarray_variable__'].shape[0]
         self.ratio = int(self.total_data * ratio)
         self.length = length
+        self.length_target = 4
         self.train = training
 
     def __getitem__(self, item):
@@ -62,16 +63,16 @@ class NowCastingDataset(Dataset):
         else:
             data = self.value[self.ratio:]
         inp = data[item:item + self.length]
-        tar = data[item + self.length:item + self.length + self.length]
+        tar = data[item + self.length:item + self.length + self.length_target]
         input = np.resize(np.reshape(inp, (self.length, 1, self.row, self.col)), (self.length, 1, 256, 256))
-        target = np.resize(np.reshape(tar, (self.length, 1, self.row, self.col)), (self.length, 1, 256, 256))
+        target = np.resize(np.reshape(tar, (self.length_target, 1, self.row, self.col)), (self.length_target, 1, 256, 256))
         return [input, target]
 
     def __len__(self):
         if self.train:
             return self.ratio
         else:
-            return self.value.shape[0] - self.ratio
+            return self.value.shape[0] - self.ratio - 4
 
 if __name__ == '__main__':
     PATH = r'E:\dataset\pwv.nc'

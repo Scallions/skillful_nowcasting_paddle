@@ -23,7 +23,8 @@ class Generator(nn.Layer):
         """
         super().__init__()
         self.cond_stack = ConditioningStack(num_channels,lead_time//time_delta)
-        self.sampler = Sampler(lead_time, time_delta)
+        # self.sampler = Sampler(lead_time, time_delta)
+        self.sampler = Sampler(4, 1)
 
     def forward(self, inputs):
         """Connect to a graph.
@@ -38,11 +39,6 @@ class Generator(nn.Layer):
         initial_states = self.cond_stack(inputs)
         predictions = self.sampler(initial_states, [height, width])
         return predictions
-
-    def get_variables(self):
-        """Get all variables of the module."""
-        # pass
-        raise NotImplementedError
 
 
 class ConditioningStack(nn.Layer):

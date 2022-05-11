@@ -13,11 +13,11 @@ if not os.path.isdir('result'):
 logger = logger_config(log_path='result/DGMR_log.txt', logging_name='DGMR')
 
 
-G = Generator(num_channels=1, lead_time=110, time_delta=5)
+G = Generator(num_channels=1, lead_time=90, time_delta=5)
 D = Discriminator(input_channel=1)
 
-opt_G = paddle.optimizer.Adam(parameters=G.parameters())
-opt_D = paddle.optimizer.Adam(parameters=D.parameters())
+opt_G = paddle.optimizer.Adam(5e-5,parameters=G.parameters(), beta1=0.0, beta2=0.999)
+opt_D = paddle.optimizer.Adam(2e-4, parameters=D.parameters(), beta1=0.0, beta2=0.999)
 
 PATH = r'E:\dataset\pwv.nc'
 LENGTH = 10
@@ -72,7 +72,7 @@ for epoch in range(TOTAL_EPOCH):
             paddle.concat([inp, gen_sample], axis=1) for gen_sample in gen_samples
         ]
         gen_disc_loss = loss_hinge_gen(D(paddle.concat(gen_seqs, axis=0)))
-        gen_loss = gen_disc_loss + grid_cell_reg
+        gen_loss = gen_disc_loss + 20 * grid_cell_reg
         gen_loss.backward()
         opt_G.step()
 

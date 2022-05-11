@@ -36,6 +36,7 @@ class Discriminator(nn.Layer):
         """
         # b, t, h, w, c = tf.shape(frames).as_list()
         b, t, c, h, w = frames.shape
+        assert t >= self.num_spatial_frames + self.num_conditioning_frames
 
         # Prepare the frames for spatial discriminator: pick 8 random time steps out
         # of 18 lead time steps, and downsample from 256x256 to 128x128.
