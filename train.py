@@ -83,7 +83,7 @@ for epoch in range(TOTAL_EPOCH):
         opt_G.step()
 
         if step % 100 == 0:
-            logger.info('Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}'.format(epoch,
+            logger.info('[TRAIN] Epoch [{}/{}], Step [{}/{}], d_loss: {:.4f}, g_loss: {:.4f}'.format(epoch,
                                                                                              TOTAL_EPOCH,
                                                                                              step,
                                                                                              TOTAL_STEP,
