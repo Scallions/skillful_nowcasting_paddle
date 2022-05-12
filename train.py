@@ -33,14 +33,14 @@ train_loader = DataLoader(train_dataset,
                     batch_size=BATCH_SIZE,
                     shuffle=False,
                     drop_last=True,
-                    num_workers=0) # if windows, num_workers must be set 0
+                    num_workers=4) # if windows, num_workers must be set 0
 
 test_dataset = NowCastingDataset(PATH, LENGTH, 0.8, training=False)
 test_loader = DataLoader(test_dataset,
                     batch_size=BATCH_SIZE,
                     shuffle=False,
                     drop_last=True,
-                    num_workers=0)
+                    num_workers=4)
 
 TOTAL_EPOCH = 100
 TOTAL_STEP = len(train_loader)
