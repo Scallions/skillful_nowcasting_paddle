@@ -3,6 +3,7 @@ import os
 import numpy as np
 from datetime import datetime
 from logger import logger_config
+from tools import save_model
 import paddle.optimizer
 from paddle.io import DataLoader
 from dataset import NowCastingDataset
@@ -88,6 +89,8 @@ for epoch in range(TOTAL_EPOCH):
                                                                                              TOTAL_STEP,
                                                                                              disc_loss.item(),
                                                                                              gen_loss.item()))
+    save_model(G, opt_G, 'model', epoch, 'G')
+    save_model(D, opt_D, 'model', epoch, 'D')
 
     if epoch % 2 == 0:
         disc_loss_list = []
