@@ -1,14 +1,14 @@
 import os
 import paddle
 
-def save_model(model, optimizer, save_dir, epoch, name):
+def save_model(model, optimizer, save_dir, epoch, step, name):
     current_save_dir = os.path.join(save_dir, "epoch_{}".format(epoch))
     if not os.path.isdir(current_save_dir):
         os.makedirs(current_save_dir)
     paddle.save(model.state_dict(),
-                os.path.join(current_save_dir, name, 'model.pdparams'))
+                os.path.join(current_save_dir, name + '_' + str(step) + '_model.pdparams'))
     paddle.save(optimizer.state_dict(),
-                os.path.join(current_save_dir, name, 'model.pdopt'))
+                os.path.join(current_save_dir, name + '_' + str(step) + '_model.pdopt'))
 
 
 def resume(model, optimizer, resume_model):
