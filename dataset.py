@@ -32,9 +32,9 @@ class NowCastingDataset(Dataset):
 
     def __len__(self):
         if self.train:
-            return self.ratio
+            return self.ratio-self.length-self.length_target
         else:
-            return self.value.shape[0] - self.ratio - 4
+            return self.value.shape[0] - self.ratio - self.length-self.length_target
 
 if __name__ == '__main__':
     PATH = r'E:\dataset\pwv.nc'
